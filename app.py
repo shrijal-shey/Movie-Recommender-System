@@ -1,7 +1,6 @@
 import os
 import pickle
 import time
-import pandas as pd
 import requests
 import streamlit as st
 
@@ -15,17 +14,14 @@ def download_file(url, output_name):
                 f.write(response.content)
 
 
-MOVIES_URL = "https://drive.google.com/uc?export=download&id=1lJC4ju93UftB8qOcM8J04LBEcUZnW8s_"
+# We ONLY need your pre-sorted dictionary file now!
 BLUEPRINT_URL = "https://drive.google.com/uc?export=download&id=1XL_4KeGz93b2ecOA1rvbCWdy5OSQWJ0E"
-
-download_file(MOVIES_URL, "movies_dict.pkl")
 download_file(BLUEPRINT_URL, "rec_blueprint.pkl")
 
-movies_dict = pickle.load(open("movies_dict.pkl", "rb"))
-movies = pd.DataFrame(movies_dict)
-
-# Load the hyper-optimized static matching dictionary object
+# Load the lightweight mapping dictionary object (takes < 2MB of RAM)
 blueprint = pickle.load(open("rec_blueprint.pkl", "rb"))
+# Sort movie titles alphabetically for the dropdown selection
+movie_list = sorted(list(blueprint.keys()))
 
 # -------------------- TMDB Settings --------------------
 API_KEY = st.secrets["TMDB_API_KEY"]
@@ -53,7 +49,7 @@ def recommend(movie_title):
     recommended_movie_names = []
     recommended_movie_posters = []
 
-    # Pull pre-sorted matching features instantly out from dictionary map keys
+    # Grab pre-sorted top 5 matches right out of the dictionary keys instantly
     picks = blueprint.get(movie_title, [])
 
     for item in picks:
@@ -131,7 +127,6 @@ st.markdown('<p class="sub-title">Your ultimate companion for discovering cinema
 left_spacer, center_col, right_spacer = st.columns([1, 2, 1])
 
 with center_col:
-    movie_list = movies["title"].values
     selected_movie = st.selectbox(
         "Type or select a movie from the catalog:", movie_list, label_visibility="collapsed"
     )

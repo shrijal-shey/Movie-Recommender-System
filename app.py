@@ -4,9 +4,6 @@ import time
 import pandas as pd
 import requests
 import streamlit as st
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
-
 
 # -------------------- Load Data Dynamically --------------------
 def download_file(url, output_name):
@@ -16,32 +13,23 @@ def download_file(url, output_name):
             with open(output_name, "wb") as f:
                 f.write(response.content)
 
-
-# We ONLY need the movies dataframe file now
+# Converted Google Drive Direct Download Links
 MOVIES_URL = "https://drive.google.com/uc?export=download&id=1lJC4ju93UftB8qOcM8J04LBEcUZnW8s_"
-download_file(MOVIES_URL, "movies_dict.pkl")
+SIMILARITY_URL = "https://drive.google.com/uc?export=download&id=1vLqwY1CUsbRZCKaTpT_26cbZGFpue5qz"
 
-# Load movies dictionary data
+# Download files to the cloud server environment
+download_file(MOVIES_URL, "movies_dict.pkl")
+download_file(SIMILARITY_URL, "similarity_compressed.pkl")
+
+# Load data assets safely
 movies_dict = pickle.load(open("movies_dict.pkl", "rb"))
 movies = pd.DataFrame(movies_dict)
+similarity = pickle.load(open("similarity_compressed.pkl", "rb"))
 
-
-# -------------------- Smart Memory Recommendation --------------------
-# Computes similarity vectors ONLY for the targeted movie selection to prevent RAM crashes
-def recommend(movie_title):
-    # 1. Vectorize text tags
-    tfidf = TfidfVectorizer(max_features=5000, stop_words="english")
-    tfidf_matrix = tfidf.fit_transform(movies['tags'])
-
-    # 2. Extract index of the chosen target movie
-    movie_index = movies[movies["title"] == movie_title].index[0]
-
-    # 3. Target comparison vector calculations only
-    target_vector = tfidf_matrix[movie_index]
-    similarity_scores = cosine_similarity(target_vector, tfidf_matrix).flatten()
-
-    # 4. Sort and parse structural listings
-    distances = sorted(list(enumerate(similarity_scores)), reverse=True, key=lambda x: x[1])
+# -------------------- Recommendation Layout --------------------
+def recommend(movie):
+    movie_index = movies[movies["title"] == movie].index[0]
+    distances = sorted(list(enumerate(similarity[movie_index])), reverse=True, key=lambda x: x[1])
 
     recommended_movie_names = []
     recommended_movie_posters = []
@@ -54,12 +42,10 @@ def recommend(movie_title):
 
     return recommended_movie_names, recommended_movie_posters
 
-
 # -------------------- TMDB Settings --------------------
 API_KEY = st.secrets["TMDB_API_KEY"]
 session = requests.Session()
 headers = {"User-Agent": "Mozilla/5.0"}
-
 
 def fetch_poster(movie_id):
     url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={API_KEY}&language=en-US"
@@ -75,7 +61,6 @@ def fetch_poster(movie_id):
         except requests.exceptions.RequestException:
             time.sleep(0.5)
     return "https://via.placeholder.com/500x750?text=Error"
-
 
 # -------------------- Modern UI Configurations --------------------
 st.set_page_config(page_title="CineMatch | Movie Recommender", page_icon="🎬", layout="wide")
@@ -139,8 +124,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<p class="main-title">🎬 CineMatch AI</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-title">Your ultimate companion for discovering cinematic masterpieces</p>',
-            unsafe_allow_html=True)
+st.markdown('<p class="sub-title">Your ultimate companion for discovering cinematic masterpieces</p>', unsafe_allow_html=True)
 
 left_spacer, center_col, right_spacer = st.columns([1, 2, 1])
 

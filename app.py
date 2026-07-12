@@ -4,8 +4,10 @@ import time
 import pandas as pd
 import requests
 import streamlit as st
+import numpy as np
 
-# -------------------- Load Data Dynamically --------------------
+
+# -------------------- Load Data Dynamically with Caching --------------------
 def download_file(url, output_name):
     if not os.path.exists(output_name):
         with st.spinner(f"Downloading data file ({output_name}). Please wait..."):
@@ -13,20 +15,34 @@ def download_file(url, output_name):
             with open(output_name, "wb") as f:
                 f.write(response.content)
 
+
 MOVIES_URL = "https://drive.google.com/uc?export=download&id=1lJC4ju93UftB8qOcM8J04LBEcUZnW8s_"
 SIMILARITY_URL = "https://drive.google.com/uc?export=download&id=1qBTcVgcYs8qoRf9dK4LGiYhbJT6iRdpK"
 
 download_file(MOVIES_URL, "movies_dict.pkl")
 download_file(SIMILARITY_URL, "similarity.pkl")
 
-movies_dict = pickle.load(open("movies_dict.pkl", "rb"))
-movies = pd.DataFrame(movies_dict)
-similarity = pickle.load(open("similarity.pkl", "rb"))
+
+# Cached function ensuring datasets load ONCE and consume half the memory
+@st.cache_data
+def load_cached_data():
+    movies_dict = pickle.load(open("movies_dict.pkl", "rb"))
+    df = pd.DataFrame(movies_dict)
+
+    # Load similarity matrix and cast to float32 to drastically cut RAM usage
+    raw_similarity = pickle.load(open("similarity.pkl", "rb"))
+    sim_matrix = np.array(raw_similarity, dtype=np.float32)
+
+    return df, sim_matrix
+
+
+movies, similarity = load_cached_data()
 
 # -------------------- TMDB Settings --------------------
 API_KEY = st.secrets["TMDB_API_KEY"]
 session = requests.Session()
 headers = {"User-Agent": "Mozilla/5.0"}
+
 
 def fetch_poster(movie_id):
     url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={API_KEY}&language=en-US"
@@ -40,8 +56,9 @@ def fetch_poster(movie_id):
                 return "https://image.tmdb.org/t/p/w500" + poster_path
             return "https://via.placeholder.com/500x750?text=No+Poster"
         except requests.exceptions.RequestException:
-            time.sleep(1)
+            time.sleep(0.5)
     return "https://via.placeholder.com/500x750?text=Error"
+
 
 def recommend(movie):
     movie_index = movies[movies["title"] == movie].index[0]
@@ -58,18 +75,15 @@ def recommend(movie):
 
     return recommended_movie_names, recommended_movie_posters
 
+
 # -------------------- Modern UI Configurations --------------------
 st.set_page_config(page_title="CineMatch | Movie Recommender", page_icon="🎬", layout="wide")
 
-# Injecting Custom CSS for a dark, smooth, cinematic aesthetic
 st.markdown("""
     <style>
-    /* Main app background color */
     .stApp {
         background: linear-gradient(135deg, #0f0c20 0%, #15102a 50%, #060214 100%);
     }
-
-    /* Beautiful glowing text header */
     .main-title {
         font-family: 'Inter', sans-serif;
         font-weight: 800;
@@ -86,8 +100,6 @@ st.markdown("""
         margin-bottom: 40px;
         font-size: 1.1rem;
     }
-
-    /* Modern card container wrapper */
     .movie-card {
         background: rgba(255, 255, 255, 0.04);
         border: 1px solid rgba(255, 255, 255, 0.08);
@@ -97,14 +109,10 @@ st.markdown("""
         box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
         transition: transform 0.3s ease, border 0.3s ease;
     }
-
-    /* Zoom animation when hovering over recommended movies */
     .movie-card:hover {
         transform: translateY(-8px);
         border: 1px solid rgba(138, 43, 226, 0.6);
     }
-
-    /* Elegant title truncation inside cards */
     .movie-title {
         color: #E2E8F0;
         font-family: 'Inter', sans-serif;
@@ -113,8 +121,6 @@ st.markdown("""
         margin-top: 10px;
         word-wrap: break-word;
     }
-
-    /* Custom button styling overrides */
     div.stButton > button:first-child {
         background: linear-gradient(90deg, #7928CA 0%, #FF0080 100%);
         color: white;
@@ -131,11 +137,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Styled Header Titles
 st.markdown('<p class="main-title">🎬 CineMatch AI</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-title">Your ultimate companion for discovering cinematic masterpieces</p>', unsafe_allow_html=True)
+st.markdown('<p class="sub-title">Your ultimate companion for discovering cinematic masterpieces</p>',
+            unsafe_allow_html=True)
 
-# Centering the selectbox dropdown structure
 left_spacer, center_col, right_spacer = st.columns([1, 2, 1])
 
 with center_col:
@@ -144,12 +149,10 @@ with center_col:
         "Type or select a movie from the catalog:", movie_list, label_visibility="collapsed"
     )
 
-    # Centers button slightly
     btn_spacer_l, btn_col, btn_spacer_r = st.columns([1.2, 1, 1])
     with btn_col:
         submit_button = st.button("Generate Picks")
 
-# -------------------- Recommendation Layout Execution --------------------
 if submit_button:
     names, posters = recommend(selected_movie)
     st.markdown("<br><br>", unsafe_allow_html=True)
@@ -157,7 +160,6 @@ if submit_button:
     cols = st.columns(5, gap="medium")
     for i in range(5):
         with cols[i]:
-            # Using clean streamlit native components combined with container structures
             st.markdown(f"""
                 <div class="movie-card">
                     <img src="{posters[i]}" style="width:100%; border-radius:12px; aspect-ratio:2/3; object-fit:cover;"/>

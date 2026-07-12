@@ -4,10 +4,10 @@ import time
 import pandas as pd
 import requests
 import streamlit as st
-import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 
-
-# -------------------- Load Data Dynamically with Caching --------------------
+# -------------------- Load Data Dynamically --------------------
 def download_file(url, output_name):
     if not os.path.exists(output_name):
         with st.spinner(f"Downloading data file ({output_name}). Please wait..."):
@@ -15,34 +15,29 @@ def download_file(url, output_name):
             with open(output_name, "wb") as f:
                 f.write(response.content)
 
-
+# We ONLY need the movies dataframe file now!
 MOVIES_URL = "https://drive.google.com/uc?export=download&id=1lJC4ju93UftB8qOcM8J04LBEcUZnW8s_"
-SIMILARITY_URL = "https://drive.google.com/uc?export=download&id=1qBTcVgcYs8qoRf9dK4LGiYhbJT6iRdpK"
-
 download_file(MOVIES_URL, "movies_dict.pkl")
-download_file(SIMILARITY_URL, "similarity.pkl")
 
+# Load movies dictionary data
+movies_dict = pickle.load(open("movies_dict.pkl", "rb"))
+movies = pd.DataFrame(movies_dict)
 
-# Cached function ensuring datasets load ONCE and consume half the memory
+# -------------------- Calculate Similarity on the Fly --------------------
+# This avoids loading huge pickle files and stops the 1GB RAM crash completely!
 @st.cache_data
-def load_cached_data():
-    movies_dict = pickle.load(open("movies_dict.pkl", "rb"))
-    df = pd.DataFrame(movies_dict)
+def calculate_similarity(_df):
+    tfidf = TfidfVectorizer(max_features=5000, stop_words="english")
+    # Make sure your text column name matches what you used in Jupyter (usually 'tags')
+    tfidf_matrix = tfidf.fit_transform(_df['tags'])
+    return cosine_similarity(tfidf_matrix)
 
-    # Load similarity matrix and cast to float32 to drastically cut RAM usage
-    raw_similarity = pickle.load(open("similarity.pkl", "rb"))
-    sim_matrix = np.array(raw_similarity, dtype=np.float32)
-
-    return df, sim_matrix
-
-
-movies, similarity = load_cached_data()
+similarity = calculate_similarity(movies)
 
 # -------------------- TMDB Settings --------------------
 API_KEY = st.secrets["TMDB_API_KEY"]
 session = requests.Session()
 headers = {"User-Agent": "Mozilla/5.0"}
-
 
 def fetch_poster(movie_id):
     url = f"https://api.themoviedb.org/3/movie/{movie_id}?api_key={API_KEY}&language=en-US"
@@ -59,7 +54,6 @@ def fetch_poster(movie_id):
             time.sleep(0.5)
     return "https://via.placeholder.com/500x750?text=Error"
 
-
 def recommend(movie):
     movie_index = movies[movies["title"] == movie].index[0]
     distances = sorted(list(enumerate(similarity[movie_index])), reverse=True, key=lambda x: x[1])
@@ -74,7 +68,6 @@ def recommend(movie):
         recommended_movie_posters.append(fetch_poster(movie_id))
 
     return recommended_movie_names, recommended_movie_posters
-
 
 # -------------------- Modern UI Configurations --------------------
 st.set_page_config(page_title="CineMatch | Movie Recommender", page_icon="🎬", layout="wide")
@@ -138,8 +131,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 st.markdown('<p class="main-title">🎬 CineMatch AI</p>', unsafe_allow_html=True)
-st.markdown('<p class="sub-title">Your ultimate companion for discovering cinematic masterpieces</p>',
-            unsafe_allow_html=True)
+st.markdown('<p class="sub-title">Your ultimate companion for discovering cinematic masterpieces</p>', unsafe_allow_html=True)
 
 left_spacer, center_col, right_spacer = st.columns([1, 2, 1])
 

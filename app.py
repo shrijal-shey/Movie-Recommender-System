@@ -4,56 +4,28 @@ import time
 import pandas as pd
 import requests
 import streamlit as st
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
 
 
 # -------------------- Load Data Dynamically --------------------
 def download_file(url, output_name):
     if not os.path.exists(output_name):
-        with st.spinner(f"Downloading data file ({output_name}). Please wait..."):
+        with st.spinner(f"Loading system environment ({output_name}). Please wait..."):
             response = requests.get(url)
             with open(output_name, "wb") as f:
                 f.write(response.content)
 
 
-# We ONLY need the movies data file now. No more huge similarity matrix!
 MOVIES_URL = "https://drive.google.com/uc?export=download&id=1lJC4ju93UftB8qOcM8J04LBEcUZnW8s_"
+BLUEPRINT_URL = "https://drive.google.com/uc?export=download&id=1XL_4KeGz93b2ecOA1rvbCWdy5OSQWJ0E"
+
 download_file(MOVIES_URL, "movies_dict.pkl")
+download_file(BLUEPRINT_URL, "rec_blueprint.pkl")
 
 movies_dict = pickle.load(open("movies_dict.pkl", "rb"))
 movies = pd.DataFrame(movies_dict)
 
-
-# -------------------- Smart On-Demand Recommender --------------------
-def recommend(movie):
-    # Vectorize tags dynamically for matching
-    tfidf = TfidfVectorizer(max_features=5000, stop_words="english")
-
-    # Check if 'tags' exists, fallback to 'string' or similar if needed
-    tag_column = 'tags' if 'tags' in movies.columns else movies.columns[-1]
-    tfidf_matrix = tfidf.fit_transform(movies[tag_column])
-
-    movie_index = movies[movies["title"] == movie].index[0]
-
-    # Compute similarity ONLY for the selected movie against all others
-    # This prevents the 1GB RAM memory spike completely!
-    selected_movie_vector = tfidf_matrix[movie_index]
-    similarity_scores = cosine_similarity(selected_movie_vector, tfidf_matrix).flatten()
-
-    distances = sorted(list(enumerate(similarity_scores)), reverse=True, key=lambda x: x[1])
-
-    recommended_movie_names = []
-    recommended_movie_posters = []
-
-    for i in distances[1:6]:
-        movie_id = movies.iloc[i[0]]["movie_id"]
-        title = movies.iloc[i[0]]["title"]
-        recommended_movie_names.append(title)
-        recommended_movie_posters.append(fetch_poster(movie_id))
-
-    return recommended_movie_names, recommended_movie_posters
-
+# Load the hyper-optimized static matching dictionary object
+blueprint = pickle.load(open("rec_blueprint.pkl", "rb"))
 
 # -------------------- TMDB Settings --------------------
 API_KEY = st.secrets["TMDB_API_KEY"]
@@ -75,6 +47,20 @@ def fetch_poster(movie_id):
         except requests.exceptions.RequestException:
             time.sleep(0.5)
     return "https://via.placeholder.com/500x750?text=Error"
+
+
+def recommend(movie_title):
+    recommended_movie_names = []
+    recommended_movie_posters = []
+
+    # Pull pre-sorted matching features instantly out from dictionary map keys
+    picks = blueprint.get(movie_title, [])
+
+    for item in picks:
+        recommended_movie_names.append(item["title"])
+        recommended_movie_posters.append(fetch_poster(item["movie_id"]))
+
+    return recommended_movie_names, recommended_movie_posters
 
 
 # -------------------- Modern UI Configurations --------------------
